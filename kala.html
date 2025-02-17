@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa con Waypoints</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <style>
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        #exportButton {
+            margin-top: 10px;
+            padding: 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <button id="exportButton">Exportar Waypoints</button>
+
+    <script>
+        var map = L.map('map').setView([-34.92, -56.15], 10);
+        var waypoints = [];
+
+        // Agregar la carta náutica desde Imgur
+        var imgUrl = 'https://i.imgur.com/zrtNL3I.jpg';
+        var imgBounds = [[-35.2083, -56.5833], [-34.7333, -55.8333]];
+        L.imageOverlay(imgUrl, imgBounds).addTo(map);
+
+        // Cargar los waypoints desde LocalStorage si existen
+        var savedWaypoints = localStorage.getItem("waypoints");
+        if (savedWaypoints) {
+            waypoints = JSON.parse(savedWaypoints);
+            waypoints.forEach(wp => addWaypoint(wp.Nombre, wp.Latitud, wp.Longitud, wp["Tipo de Fondo"], wp["Tipo de Pesca"]));
+        } else {
+            // Si no hay datos guardados, cargar desde el CSV
+            fetch('waypoints_corrected.csv')
+                .then(response => response.text())
+                .then(csvData => {
+                    Papa.parse(csvData, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            waypoints = results.data.map(row => ({
+                                Nombre: row.Nombre,
+                                Latitud: parseFloat(row.Latitud),
+                                Longitud: parseFloat(row.Longitud),
+                                "Tipo de Fondo": row["Tipo de Fondo"],
+                                "Tipo de Pesca": row["Tipo de Pesca"]
+                            }));
+                            waypoints.forEach(wp => addWaypoint(wp.Nombre, wp.Latitud, wp.Longitud, wp["Tipo de Fondo"], wp["Tipo de Pesca"]));
+                        }
+                    });
+                })
+                .catch(error => console.error('Error cargando el CSV:', error));
+        }
+
+        function addWaypoint(nombre, lat, lon, fondo, pesca) {
+            if (!isNaN(lat) && !isNaN(lon)) {
+                var marker = L.marker([lat, lon], { draggable: true }).addTo(map)
+                    .bindPopup(`<b>${nombre}</b><br>Fondo: ${fondo}<br>Pesca: ${pesca}`);
+
+                marker.on('dragend', function (event) {
+                    var newLatLng = event.target.getLatLng();
+                    console.log(`Nuevo waypoint: ${nombre}, Lat: ${newLatLng.lat}, Lng: ${newLatLng.lng}`);
+                    
+                    waypoints = waypoints.map(wp =>
+                        wp.Nombre === nombre ? { ...wp, Latitud: newLatLng.lat, Longitud: newLatLng.lng } : wp
+                    );
+
+                    localStorage.setItem("waypoints", JSON.stringify(waypoints));
+                });
+            }
+        }
+
+        // Exportar los waypoints actualizados como CSV
+        document.getElementById("exportButton").addEventListener("click", function () {
+            let csvContent = "Nombre,Latitud,Longitud\n" +
+                waypoints.map(wp => `${wp.Nombre},${wp.Latitud},${wp.Longitud}`).join("\n");
+            
+            let blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            let link = document.createElement("a");
+            link.setAttribute("href", URL.createObjectURL(blob));
+            link.setAttribute("download", "waypoints_actualizados.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+    </script>
+</body>
+</html>
